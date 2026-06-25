@@ -184,20 +184,23 @@ def load_model(path: str = MODEL_PATH) -> RandomForestClassifier:
     return model
 
 
-def predict(model: RandomForestClassifier, features: dict) -> dict:
+def predict(model: RandomForestClassifier, url: str) -> dict:
     """
-    Makes a prediction for a single URL given its extracted features.
+    Makes a prediction for a single URL.
 
     Args:
         model: Trained RandomForestClassifier
-        features: Dictionary from extract_features(url)
+        url: Raw URL string
 
     Returns:
         Dictionary with:
           - label: "Phishing" or "Legitimate"
           - confidence: probability score (0-100%)
     """
-    feature_vector = np.array(list(features.values())).reshape(1, -1)
+    from src.features import extract_features_for_model
+    model_features = extract_features_for_model(url)
+    import numpy as np
+    feature_vector = np.array(list(model_features.values())).reshape(1, -1)
 
     prediction = model.predict(feature_vector)[0]
     probability = model.predict_proba(feature_vector)[0]
