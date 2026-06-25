@@ -44,6 +44,8 @@ def load_dataset(filepath: str) -> tuple[pd.DataFrame, pd.Series]:
         y: Label Series (0 = legitimate, 1 = phishing)
     """
     df = pd.read_csv(filepath)
+    # Strip whitespace from column names to clean up trailing spaces
+    df.columns = [c.strip() for c in df.columns]
 
     # The last column 'Result' is the label
     X = df.drop(columns=["Result"])
