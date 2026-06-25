@@ -168,6 +168,16 @@ def extract_features_for_model(url: str) -> dict:
     """
     # 1. IP Address (1 = Phishing, -1 = Legitimate)
     ip_addr = 1 if has_ip_address(url) else -1
+
+    # 2. URL Length (<54 -> -1, 54-75 -> 0, >75 -> 1)
+    length = len(url)
+    if length < 54:
+        url_len = -1
+    elif length <= 75:
+        url_len = 0
+    else:
+        url_len = 1
     return {
-        "having_IPhaving_IP_Address": ip_addr
+        "having_IPhaving_IP_Address": ip_addr,
+        "URLURL_Length": url_len
     }
