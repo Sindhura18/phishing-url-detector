@@ -186,10 +186,14 @@ def extract_features_for_model(url: str) -> dict:
 
     # 5. Double Slash Redirect (-1 = Phishing/Redirect present, 1 = Legitimate/No redirect)
     double_slash = -1 if has_double_slash_redirect(url) else 1
+
+    # 6. Prefix Suffix / Hyphen in Domain (1 = Phishing, -1 = Legitimate)
+    prefix_suffix = 1 if has_hyphen_in_domain(url) else -1
     return {
         "having_IPhaving_IP_Address": ip_addr,
         "URLURL_Length": url_len,
         "Shortining_Service": short,
         "having_At_Symbol": at_sym,
-        "double_slash_redirecting": double_slash
+        "double_slash_redirecting": double_slash,
+        "Prefix_Suffix": prefix_suffix
     }
