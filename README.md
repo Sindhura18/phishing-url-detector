@@ -178,3 +178,13 @@ The model uses 10 URL-based string features that can be computed instantly witho
 **D Sindhura**  
 B.E. CSE (AI & ML) | Python SDET  
 [LinkedIn](https://linkedin.com/in/dsindhura) · [GitHub](https://github.com/Sindhura18)
+
+### Visual Results
+
+Here is what the detector looks like in action:
+
+#### Legitimate URL Checked
+![Legitimate result](images/legitimate_result.png)
+
+#### Phishing URL Checked
+![Phishing result](images/phishing_result.png)
