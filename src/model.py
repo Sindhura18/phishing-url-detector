@@ -21,9 +21,13 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
 )
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
 
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "models", "rf_model.pkl")
+TEXT_MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "models", "text_lr_model.pkl")
+VECTORIZER_PATH = os.path.join(os.path.dirname(__file__), "..", "models", "tfidf_vectorizer.pkl")
 
 
 def load_dataset(filepath: str) -> tuple[pd.DataFrame, pd.Series]:
@@ -212,4 +216,60 @@ def predict(model: RandomForestClassifier, url: str) -> dict:
         "confidence": round(confidence * 100, 2),
         "is_phishing": bool(prediction == 1)
     }
+
+
+def load_text_model(model_path: str = TEXT_MODEL_PATH, vec_path: str = VECTORIZER_PATH):
+    """Loads the TF-IDF Vectorizer and Logistic Regression text classifier."""
+    if not os.path.exists(model_path) or not os.path.exists(vec_path):
+        raise FileNotFoundError("Text model binaries not found. Run train.py first.")
+    with open(model_path, "rb") as f:
+        model = pickle.load(f)
+    with open(vec_path, "rb") as f:
+        vectorizer = pickle.load(f)
+    return model, vectorizer
+
+
+def predict_text(model, vectorizer, url: str) -> dict:
+    """Predicts phishing probability purely from the raw URL text using TF-IDF + Logistic Regression."""
+    x_tfidf = vectorizer.transform([url])
+    prediction = model.predict(x_tfidf)[0]
+    probability = model.predict_proba(x_tfidf)[0]
+
+    confidence = probability[1] if prediction == 1 else probability[0]
+    return {
+        "label": "Phishing" if prediction == 1 else "Legitimate",
+        "confidence": round(confidence * 100, 2),
+        "is_phishing": bool(prediction == 1)
+    }
+
+
+def explain_prediction(model: RandomForestClassifier, url: str) -> dict:
+    """
+    Explainable AI (XAI): Returns local feature contributions for a prediction.
+    Features that align with phishing (+1) contribute positively,
+    while features that align with legitimate (-1) contribute negatively.
+    """
+    from src.features import extract_features_for_model
+    model_features = extract_features_for_model(url)
+
+    importances = model.feature_importances_
+    feature_names = [
+        "having_IPhaving_IP_Address",
+        "URLURL_Length",
+        "Shortining_Service",
+        "having_At_Symbol",
+        "double_slash_redirecting",
+        "Prefix_Suffix",
+        "having_Sub_Domain",
+        "SSLfinal_State"
+    ]
+
+    contributions = {}
+    for name, imp in zip(feature_names, importances):
+        val = model_features.get(name, 0)
+        # Scale to percentage contribution for visualization
+        score = val * imp * 100
+        contributions[name] = round(score, 2)
+
+    return contributions
 
