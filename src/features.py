@@ -177,7 +177,11 @@ def extract_features_for_model(url: str) -> dict:
         url_len = 0
     else:
         url_len = 1
+
+    # 3. Shortening Service (-1 = Phishing/Shortener used, 1 = Legitimate/No shortener)
+    short = -1 if uses_shortening_service(url) else 1
     return {
         "having_IPhaving_IP_Address": ip_addr,
-        "URLURL_Length": url_len
+        "URLURL_Length": url_len,
+        "Shortining_Service": short
     }
