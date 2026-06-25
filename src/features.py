@@ -15,6 +15,15 @@ requiring no external API calls — making prediction instant.
 
 import re
 import urllib.parse
+import math
+import datetime
+import os
+import socket
+import dns.resolver
+import whois
+
+# Prevent live socket lookups (WHOIS, DNS) from hanging indefinitely
+socket.setdefaulttimeout(3.0)
 
 
 # Known URL-shortening services used to hide the real destination
@@ -219,4 +228,261 @@ def extract_features_for_model(url: str) -> dict:
         "having_Sub_Domain": sub_domain,
         "SSLfinal_State": ssl_state
     }
+
+
+def calculate_entropy(text: str) -> float:
+    """
+    Calculates the Shannon entropy of a string.
+    High entropy indicates random/DGA-like domain names.
+    """
+    if not text:
+        return 0.0
+    entropy = 0.0
+    length = len(text)
+    frequencies = {}
+    for char in text:
+        frequencies[char] = frequencies.get(char, 0) + 1
+    for count in frequencies.values():
+        p = count / length
+        entropy -= p * math.log2(p)
+    return round(entropy, 4)
+
+
+def check_dns_records(domain: str) -> dict:
+    """
+    Verifies if a domain has valid A or MX DNS records.
+    """
+    res = {"has_dns_records": False, "A_record": None, "MX_record": None}
+    if not domain:
+        return res
+        
+    if os.getenv("MOCK_NETWORK") == "true":
+        return {"has_dns_records": True, "A_record": "192.168.1.1", "MX_record": "mail.domain.com"}
+
+    try:
+        a_records = dns.resolver.resolve(domain, 'A')
+        res["A_record"] = str(a_records[0])
+        res["has_dns_records"] = True
+    except Exception:
+        res["A_record"] = None
+
+    try:
+        mx_records = dns.resolver.resolve(domain, 'MX')
+        res["MX_record"] = str(mx_records[0].exchange)
+        res["has_dns_records"] = True
+    except Exception:
+        res["MX_record"] = None
+
+    return res
+
+
+def check_domain_age(domain: str) -> dict:
+    """
+    Queries WHOIS for domain creation date and calculates age in days.
+    Only queries the primary registered domain to prevent subdomain lookups from hanging.
+    """
+    res = {
+        "creation_date": None,
+        "expiration_date": None,
+        "age_days": None,
+        "is_new_domain": False
+    }
+    if not domain:
+        return res
+        
+    if os.getenv("MOCK_NETWORK") == "true":
+        return {
+            "creation_date": "2020-01-01",
+            "expiration_date": "2030-01-01",
+            "age_days": 2000,
+            "is_new_domain": False
+        }
+        
+    # Heuristic to extract registered domain (e.g. www.google.com -> google.com)
+    domain_parts = domain.lower().split('.')
+    if len(domain_parts) > 2:
+        tlds = {"com", "net", "org", "edu", "gov", "mil", "co", "uk", "in", "us", "info", "biz", "xyz"}
+        if domain_parts[-2] in tlds and len(domain_parts) >= 3:
+            registered_domain = ".".join(domain_parts[-3:])
+        else:
+            registered_domain = ".".join(domain_parts[-2:])
+    else:
+        registered_domain = domain
+
+    try:
+        # Query WHOIS with registered root domain
+        w = whois.whois(registered_domain)
+        creation = w.creation_date
+
+        expiration = w.expiration_date
+
+        if isinstance(creation, list):
+            creation = creation[0]
+        if isinstance(expiration, list):
+            expiration = expiration[0]
+
+        if isinstance(creation, datetime.datetime):
+            res["creation_date"] = creation.strftime("%Y-%m-%d")
+            age = (datetime.datetime.now() - creation).days
+            res["age_days"] = age
+            res["is_new_domain"] = age < 180
+
+        if isinstance(expiration, datetime.datetime):
+            res["expiration_date"] = expiration.strftime("%Y-%m-%d")
+    except Exception:
+        pass
+    return res
+
+
+LOCAL_BLOCKLIST = {
+    "paypal-secure-verify.com",
+    "login-paypal.com",
+    "verify-apple-id.com",
+    "netflix-update-billing.com",
+    "secure-bank-login.com",
+    "amazon-security-alert.com"
+}
+
+
+def check_local_blocklist(domain: str) -> bool:
+    """Checks if the domain is present in our local phishing blocklist."""
+    if not domain:
+        return False
+    domain_clean = domain.lower().replace("www.", "")
+    return domain_clean in LOCAL_BLOCKLIST or any(blocked in domain_clean for blocked in LOCAL_BLOCKLIST)
+
+
+def levenshtein_distance(s1: str, s2: str) -> int:
+    """Calculates Levenshtein edit distance between two strings."""
+    if len(s1) < len(s2):
+        return levenshtein_distance(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+
+    return previous_row[-1]
+
+
+def detect_homoglyph(domain: str) -> bool:
+    """
+    Detects if the domain uses non-ASCII characters or an IDN prefix (xn--)
+    suggesting a Unicode homoglyph lookalike spoofing attempt.
+    """
+    if not domain:
+        return False
+    domain_lower = domain.lower()
+    if domain_lower.startswith("xn--"):
+        return True
+    try:
+        domain.encode('ascii')
+    except UnicodeEncodeError:
+        return True
+    return False
+
+
+def detect_brand_impersonation(domain: str) -> dict:
+    """
+    Checks if the domain primary label typosquats or subdomains mimic major web brands.
+    """
+    res = {"is_impersonation": False, "target_brand": None}
+    if not domain:
+        return res
+
+    domain_clean = domain.lower().replace("www.", "")
+    parts = domain_clean.split('.')
+    if len(parts) < 2:
+        return res
+
+    # Simple common TLD set to identify the primary brand token
+    tlds = {"com", "net", "org", "edu", "gov", "mil", "co", "uk", "in", "us", "info", "biz", "xyz"}
+    primary = parts[-2]
+    if primary in tlds and len(parts) >= 3:
+        primary = parts[-3]
+
+    target_brands = [
+        "google", "microsoft", "paypal", "amazon", "netflix", "apple",
+        "facebook", "yahoo", "linkedin", "twitter", "instagram", "github"
+    ]
+
+    # 1. Look for brand name embedded inappropriately in subdomains
+    for brand in target_brands:
+        if brand in parts[:-2] or (brand in primary and primary != brand):
+            res["is_impersonation"] = True
+            res["target_brand"] = brand
+            return res
+
+    # 2. Calculate edit distance for typosquatting checks (distance 1 or 2)
+    for brand in target_brands:
+        if primary != brand:
+            dist = levenshtein_distance(primary, brand)
+            if dist in [1, 2] and len(primary) >= 4:
+                res["is_impersonation"] = True
+                res["target_brand"] = brand
+                return res
+
+    return res
+
+
+def extract_cybersecurity_report(url: str) -> dict:
+    """
+    Master threat intelligence function.
+    Returns real-time DNS status, domain age, entropy, local blocklist check,
+    brand impersonation alerts, and homoglyph checks.
+    """
+    try:
+        domain = urllib.parse.urlparse(url).netloc.split(":")[0]
+    except Exception:
+        domain = ""
+
+    entropy = calculate_entropy(domain)
+    dns_info = check_dns_records(domain)
+    whois_info = check_domain_age(domain)
+    is_blacklisted = check_local_blocklist(domain)
+    impersonation_info = detect_brand_impersonation(domain)
+    is_homoglyph = detect_homoglyph(domain)
+
+    # Compute a quick heuristics-based "Severity" rating
+    severity = "Low"
+    reasons = []
+    if is_blacklisted:
+        severity = "Critical"
+        reasons.append("Domain matches a known threat signature in the blocklist.")
+    elif impersonation_info["is_impersonation"]:
+        severity = "Critical"
+        reasons.append(f"Brand impersonation detected: attempts to spoof official '{impersonation_info['target_brand']}' domain.")
+    elif is_homoglyph:
+        severity = "Critical"
+        reasons.append("Unicode homoglyph attack detected (uses IDN punycode or mixed scripts).")
+    else:
+        if whois_info["is_new_domain"]:
+            severity = "High"
+            reasons.append("Domain is newly registered (under 6 months old).")
+        if not dns_info["has_dns_records"] and domain:
+            severity = "High"
+            reasons.append("Domain has no valid DNS A or MX records.")
+        if entropy > 4.2:
+            severity = "Medium"
+            reasons.append(f"High domain character entropy ({entropy}), suggesting dynamic generation.")
+
+    return {
+        "domain": domain,
+        "entropy": entropy,
+        "dns": dns_info,
+        "whois": whois_info,
+        "is_blacklisted": is_blacklisted,
+        "is_homoglyph": is_homoglyph,
+        "impersonation": impersonation_info,
+        "severity": severity,
+        "reasons": reasons
+    }
+
 
