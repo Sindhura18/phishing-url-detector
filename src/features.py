@@ -1,7 +1,7 @@
 """
 features.py
 -----------
-Extracts URL-based features for phishing detection.
+Extracts URL-based lexical and structural features for phishing detection.
 
 Each feature captures a known indicator of phishing behavior:
 - Phishing sites often use IP addresses instead of domain names
