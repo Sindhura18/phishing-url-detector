@@ -180,8 +180,12 @@ def extract_features_for_model(url: str) -> dict:
 
     # 3. Shortening Service (-1 = Phishing/Shortener used, 1 = Legitimate/No shortener)
     short = -1 if uses_shortening_service(url) else 1
+
+    # 4. At Symbol (1 = Phishing, -1 = Legitimate)
+    at_sym = 1 if has_at_symbol(url) else -1
     return {
         "having_IPhaving_IP_Address": ip_addr,
         "URLURL_Length": url_len,
-        "Shortining_Service": short
+        "Shortining_Service": short,
+        "having_At_Symbol": at_sym
     }
