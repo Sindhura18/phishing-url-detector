@@ -49,3 +49,7 @@ htmlcov/
 
 # Local Streamlit config and cache
 .streamlit/
+
+# Test screenshots
+tests/screenshots/
+
