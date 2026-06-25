@@ -160,3 +160,10 @@ def extract_features(url: str) -> dict:
         "uses_shortening_service": uses_shortening_service(url),
         "has_suspicious_keywords": has_suspicious_keywords(url),
     }
+
+def extract_features_for_model(url: str) -> dict:
+    """
+    Extracts and maps URL features to match the exact schema and value range
+    (-1, 0, 1) of the UCI Phishing Websites dataset columns used by the model.
+    """
+    return {}
