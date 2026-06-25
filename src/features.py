@@ -1,7 +1,7 @@
 """
 features.py
 -----------
-Extracts URL-based lexical and structural features for phishing detection.
+Extracts URL-based features for phishing detection.
 
 Each feature captures a known indicator of phishing behavior:
 - Phishing sites often use IP addresses instead of domain names
@@ -161,6 +161,7 @@ def extract_features(url: str) -> dict:
         "has_suspicious_keywords": has_suspicious_keywords(url),
     }
 
+
 def extract_features_for_model(url: str) -> dict:
     """
     Extracts and maps URL features to match the exact schema and value range
@@ -204,6 +205,10 @@ def extract_features_for_model(url: str) -> dict:
             sub_domain = 1
     except Exception:
         sub_domain = -1
+
+    # 8. SSL Final State (In the dataset, -1 = Legitimate/HTTPS, 1 = Phishing/HTTP)
+    ssl_state = -1 if has_https(url) else 1
+
     return {
         "having_IPhaving_IP_Address": ip_addr,
         "URLURL_Length": url_len,
@@ -211,5 +216,7 @@ def extract_features_for_model(url: str) -> dict:
         "having_At_Symbol": at_sym,
         "double_slash_redirecting": double_slash,
         "Prefix_Suffix": prefix_suffix,
-        "having_Sub_Domain": sub_domain
+        "having_Sub_Domain": sub_domain,
+        "SSLfinal_State": ssl_state
     }
+
