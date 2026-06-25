@@ -183,9 +183,13 @@ def extract_features_for_model(url: str) -> dict:
 
     # 4. At Symbol (1 = Phishing, -1 = Legitimate)
     at_sym = 1 if has_at_symbol(url) else -1
+
+    # 5. Double Slash Redirect (-1 = Phishing/Redirect present, 1 = Legitimate/No redirect)
+    double_slash = -1 if has_double_slash_redirect(url) else 1
     return {
         "having_IPhaving_IP_Address": ip_addr,
         "URLURL_Length": url_len,
         "Shortining_Service": short,
-        "having_At_Symbol": at_sym
+        "having_At_Symbol": at_sym,
+        "double_slash_redirecting": double_slash
     }
