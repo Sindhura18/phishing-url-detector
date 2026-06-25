@@ -83,7 +83,7 @@ if url_input:
     features = extract_features(url_input)
 
     # Get prediction
-    result = predict(model, features)
+    result = predict(model, url_input)
 
     # ── Result Banner ──────────────────────────────────────────────────────
     if result["is_phishing"]:
