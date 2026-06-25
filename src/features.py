@@ -166,4 +166,8 @@ def extract_features_for_model(url: str) -> dict:
     Extracts and maps URL features to match the exact schema and value range
     (-1, 0, 1) of the UCI Phishing Websites dataset columns used by the model.
     """
-    return {}
+    # 1. IP Address (1 = Phishing, -1 = Legitimate)
+    ip_addr = 1 if has_ip_address(url) else -1
+    return {
+        "having_IPhaving_IP_Address": ip_addr
+    }
