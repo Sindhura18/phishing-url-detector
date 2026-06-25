@@ -28,7 +28,8 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "models", "rf_model.p
 
 def load_dataset(filepath: str) -> tuple[pd.DataFrame, pd.Series]:
     """
-    Loads the UCI Phishing Websites Dataset from a CSV file.
+    Loads the UCI Phishing Websites Dataset from a CSV file, selecting only the
+    8 features that can be extracted from a raw URL.
 
     Dataset labels:
         1  → Phishing
@@ -40,15 +41,26 @@ def load_dataset(filepath: str) -> tuple[pd.DataFrame, pd.Series]:
         filepath: Path to the CSV file
 
     Returns:
-        X: Feature DataFrame (30 columns)
+        X: Feature DataFrame (8 columns)
         y: Label Series (0 = legitimate, 1 = phishing)
     """
     df = pd.read_csv(filepath)
     # Strip whitespace from column names to clean up trailing spaces
     df.columns = [c.strip() for c in df.columns]
 
-    # The last column 'Result' is the label
-    X = df.drop(columns=["Result"])
+    features_to_keep = [
+        "having_IPhaving_IP_Address",
+        "URLURL_Length",
+        "Shortining_Service",
+        "having_At_Symbol",
+        "double_slash_redirecting",
+        "Prefix_Suffix",
+        "having_Sub_Domain",
+        "SSLfinal_State"
+    ]
+
+    # Select only the features we can extract
+    X = df[features_to_keep]
     y = df["Result"]
 
     # Convert -1 (legitimate) → 0 for standard binary classification
@@ -59,6 +71,7 @@ def load_dataset(filepath: str) -> tuple[pd.DataFrame, pd.Series]:
     print(f"  Legitimate: {(y==0).sum()}")
 
     return X, y
+
 
 
 def train_model(X: pd.DataFrame, y: pd.Series) -> RandomForestClassifier:
