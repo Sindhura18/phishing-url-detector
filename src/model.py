@@ -199,11 +199,10 @@ def predict(model: RandomForestClassifier, url: str) -> dict:
     """
     from src.features import extract_features_for_model
     model_features = extract_features_for_model(url)
-    import numpy as np
-    feature_vector = np.array(list(model_features.values())).reshape(1, -1)
+    feature_df = pd.DataFrame([model_features])
 
-    prediction = model.predict(feature_vector)[0]
-    probability = model.predict_proba(feature_vector)[0]
+    prediction = model.predict(feature_df)[0]
+    probability = model.predict_proba(feature_df)[0]
 
     # predict_proba returns [prob_legit, prob_phishing]
     confidence = probability[1] if prediction == 1 else probability[0]
@@ -213,3 +212,4 @@ def predict(model: RandomForestClassifier, url: str) -> dict:
         "confidence": round(confidence * 100, 2),
         "is_phishing": bool(prediction == 1)
     }
+
