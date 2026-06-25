@@ -123,10 +123,10 @@ def evaluate_model(model: RandomForestClassifier, X_test: pd.DataFrame, y_test: 
     print(classification_report(y_test, y_pred, target_names=["Legitimate", "Phishing"]))
     print("Confusion Matrix:")
     cm = confusion_matrix(y_test, y_pred)
-    print(f"  True Negatives  (Legit → Legit)   : {cm[0][0]}")
-    print(f"  False Positives (Legit → Phishing) : {cm[0][1]}")
-    print(f"  False Negatives (Phish → Legit)    : {cm[1][0]}  ← most dangerous")
-    print(f"  True Positives  (Phish → Phishing) : {cm[1][1]}")
+    print(f"  True Negatives  (Legit -> Legit)   : {cm[0][0]}")
+    print(f"  False Positives (Legit -> Phishing) : {cm[0][1]}")
+    print(f"  False Negatives (Phish -> Legit)    : {cm[1][0]}  <- most dangerous")
+    print(f"  True Positives  (Phish -> Phishing) : {cm[1][1]}")
 
 
 def get_feature_importance(model: RandomForestClassifier, feature_names: list) -> pd.DataFrame:
