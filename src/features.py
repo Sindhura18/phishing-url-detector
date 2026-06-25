@@ -189,11 +189,27 @@ def extract_features_for_model(url: str) -> dict:
 
     # 6. Prefix Suffix / Hyphen in Domain (1 = Phishing, -1 = Legitimate)
     prefix_suffix = 1 if has_hyphen_in_domain(url) else -1
+
+    # 7. Sub Domain Dots (excluding www) (dots<=1 -> -1, dots==2 -> 0, dots>2 -> 1)
+    try:
+        domain = urllib.parse.urlparse(url).netloc.lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        dots = domain.count(".")
+        if dots <= 1:
+            sub_domain = -1
+        elif dots == 2:
+            sub_domain = 0
+        else:
+            sub_domain = 1
+    except Exception:
+        sub_domain = -1
     return {
         "having_IPhaving_IP_Address": ip_addr,
         "URLURL_Length": url_len,
         "Shortining_Service": short,
         "having_At_Symbol": at_sym,
         "double_slash_redirecting": double_slash,
-        "Prefix_Suffix": prefix_suffix
+        "Prefix_Suffix": prefix_suffix,
+        "having_Sub_Domain": sub_domain
     }
