@@ -217,11 +217,13 @@ def scan_email(payload: EmailScanRequest, request: Request, x_api_key: str = Hea
     # Generate incident playbook
     playbook = []
     from_domain = email_summary["from_domain"]
+    return_path_domain = email_summary["return_path_domain"]
+    block_domain = return_path_domain if return_path_domain else from_domain
     
     if overall_severity == "Malicious":
         playbook.extend([
             {"action": "Quarantine Email", "description": "Execute global purge search-and-destroy command across all user mailboxes to delete this message.", "status": "Recommended"},
-            {"action": "Block Sender Domain", "description": f"Add the sender domain '{from_domain if from_domain else 'unknown'}' to the email gateway blocklist.", "status": "Recommended"},
+            {"action": "Block Sender Domain", "description": f"Add the sender domain '{block_domain if block_domain else 'unknown'}' to the email gateway blocklist.", "status": "Recommended"},
             {"action": "Block Malicious URLs", "description": "Propagate the detected malicious URL(s) to corporate proxy and DNS firewall blocklists.", "status": "Recommended"},
             {"action": "Revoke User Sessions", "description": "Force-revoke active login sessions and OAuth tokens for any users who opened or clicked links in this email.", "status": "Immediate Action"},
             {"action": "Mandatory Password Reset", "description": "Trigger automated credential resets for affected recipients.", "status": "Immediate Action"}
