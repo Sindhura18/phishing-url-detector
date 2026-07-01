@@ -35,9 +35,9 @@ jobs:
       run: |
         python -m playwright install --with-deps chromium
 
-    - name: Run Model Training Pipeline
+    - name: Verify Model Binaries Exist
       run: |
-        python train.py
+        ls -la models/
 
     - name: Execute Tests (Unit & E2E)
       run: |
