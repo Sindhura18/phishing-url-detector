@@ -11,8 +11,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src.features import extract_cybersecurity_report
 from src.model import load_model, load_text_model, predict, predict_text, explain_prediction
 
-# Default secure API Key (in real production, load this from environment variables)
-API_KEY = os.getenv("API_KEY", "phish-detector-token-2026")
+# Load secure API Key from environment variables
+API_KEY = os.getenv("API_KEY")
+if not API_KEY:
+    raise ValueError("CRITICAL: The 'API_KEY' environment variable is not configured. For security reasons, a secret API key must be provided via the environment.")
 
 # Setup Rate Limiting
 limiter = Limiter(key_func=get_remote_address)
@@ -28,7 +30,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -259,7 +261,7 @@ def scan_url(payload: ScanRequest, request: Request, x_api_key: str = Header(...
     - Applies IP-based rate limiting (15 scans per minute)
     - Performs DNS and WHOIS threat intelligence scans
     - Evaluates the URL using both structural Random Forest and text TF-IDF models
-    - Computes local feature attribution (XAI) for explanation
+    - Computes a local feature contribution breakdown for explanation
     """
     # 1. Verify API Key
     verify_api_key(x_api_key)
@@ -271,13 +273,13 @@ def scan_url(payload: ScanRequest, request: Request, x_api_key: str = Header(...
     # Standardize URL protocol if missing (for feature extractors)
     if not url.startswith(("http://", "https://")):
         url = "http://" + url
-
+ 
     if rf_model is None or text_model is None:
         raise HTTPException(
             status_code=503,
             detail="AI models are not loaded. Run train.py first."
         )
-
+ 
     # 2. Extract Cybersecurity Report (DNS, WHOIS, Entropy, Blocklist)
     threat_intel = extract_cybersecurity_report(url)
     
@@ -285,7 +287,7 @@ def scan_url(payload: ScanRequest, request: Request, x_api_key: str = Header(...
     rf_pred = predict(rf_model, url)
     text_pred = predict_text(text_model, vectorizer, url)
     
-    # 4. Explainable AI (XAI)
+    # 4. Local Feature Contribution Breakdown
     explainability = explain_prediction(rf_model, url)
 
     return {

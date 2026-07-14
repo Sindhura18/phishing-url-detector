@@ -415,10 +415,31 @@ def detect_brand_impersonation(domain: str) -> dict:
 
     # 1. Look for brand name embedded inappropriately in subdomains
     for brand in target_brands:
-        if brand in parts[:-2] or (brand in primary and primary != brand):
+        if brand in parts[:-2]:
             res["is_impersonation"] = True
             res["target_brand"] = brand
             return res
+
+        if brand in primary and primary != brand:
+            # If it's a hyphenated part, e.g. "secure-paypal"
+            if "-" in primary:
+                subparts = primary.split("-")
+                if brand in subparts:
+                    res["is_impersonation"] = True
+                    res["target_brand"] = brand
+                    return res
+            else:
+                # If not hyphenated, check if it's concatenated with common phishing words or qualifiers
+                qualifiers = {
+                    "login", "verify", "secure", "signin", "update", "support", "account", "bank", 
+                    "billing", "service", "portal", "my", "get", "try", "go", "the", "app", "web", 
+                    "online", "pay", "shop", "store", "official", "alert", "security", "help", "client"
+                }
+                for qual in qualifiers:
+                    if primary == f"{brand}{qual}" or primary == f"{qual}{brand}":
+                        res["is_impersonation"] = True
+                        res["target_brand"] = brand
+                        return res
 
     # 2. Calculate edit distance for typosquatting checks (distance 1 or 2)
     for brand in target_brands:

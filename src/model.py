@@ -245,7 +245,7 @@ def predict_text(model, vectorizer, url: str) -> dict:
 
 def explain_prediction(model: RandomForestClassifier, url: str) -> dict:
     """
-    Explainable AI (XAI): Returns local feature contributions for a prediction.
+    Local Feature Contribution Breakdown: Returns local feature contributions for a prediction.
     Features that align with phishing (+1) contribute positively,
     while features that align with legitimate (-1) contribute negatively.
     """

@@ -7,7 +7,33 @@ import json
 
 # Configuration
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-API_KEY = os.getenv("API_KEY", "phish-detector-token-2026")
+API_KEY = os.getenv("API_KEY")
+
+# Require API_KEY env var if connecting to a remote FastAPI backend
+if not API_KEY and BACKEND_URL.lower() != "local":
+    raise ValueError("CRITICAL: The 'API_KEY' environment variable must be set when connecting to a remote backend service.")
+
+# Try to import local modules for offline/standalone backup mode
+try:
+    import sys
+    sys.path.insert(0, os.path.dirname(__file__))
+    from src.features import extract_cybersecurity_report
+    from src.model import load_model, load_text_model, predict, predict_text, explain_prediction
+    from src.api import parse_email_threats
+    LOCAL_MODE_AVAILABLE = True
+except Exception as e:
+    LOCAL_MODE_AVAILABLE = False
+
+@st.cache_resource
+def get_local_models():
+    if not LOCAL_MODE_AVAILABLE:
+        return None, None, None
+    try:
+        rf = load_model()
+        text_m, vec = load_text_model()
+        return rf, text_m, vec
+    except Exception as e:
+        return None, None, None
 
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -92,59 +118,93 @@ def run_url_scan(url_val: str):
         return
         
     start_time = time.time()
-    try:
-        # Standardize URL protocol if missing
-        url_std = url_val
-        if not url_std.startswith(("http://", "https://")):
-            url_std = "http://" + url_std
+    result = None
+    used_local_fallback = False
+    
+    # Standardize URL protocol if missing
+    url_std = url_val
+    if not url_std.startswith(("http://", "https://")):
+        url_std = "http://" + url_std
 
-        headers = {"X-API-Key": API_KEY}
-        payload = {"url": url_std}
-        response = requests.post(f"{BACKEND_URL}/api/v1/scan", json=payload, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            result = response.json()
+    if BACKEND_URL.lower() != "local":
+        try:
+            headers = {"X-API-Key": API_KEY}
+            payload = {"url": url_std}
+            response = requests.post(f"{BACKEND_URL}/api/v1/scan", json=payload, headers=headers, timeout=10)
             
-            # Override/upgrade severity if AI models detect phishing
-            is_rf_phish = result["models"]["random_forest"]["is_phishing"]
-            is_text_phish = result["models"]["tfidf_text"]["is_phishing"]
-            is_phishing = is_rf_phish or is_text_phish
-            
-            if is_phishing:
-                if is_rf_phish and is_text_phish:
-                    result["threat_intel"]["severity"] = "Critical"
-                    result["threat_intel"]["reasons"].append("AI Model Ensemble consensus: both classifiers flagged the URL as phishing.")
-                else:
-                    result["threat_intel"]["severity"] = "High"
-                    if is_rf_phish:
-                        result["threat_intel"]["reasons"].append("Structural AI Model (Random Forest) flagged the URL structure as phishing.")
-                    if is_text_phish:
-                        result["threat_intel"]["reasons"].append("Textual AI Model (Logistic Regression) flagged the URL text as phishing.")
-            
-            # Update Session States
-            st.session_state.total_scans += 1
-            if is_phishing:
-                st.session_state.threats_detected += 1
-                
-            elapsed = time.time() - start_time
-            st.session_state.average_response = (
-                (st.session_state.average_response * (st.session_state.total_scans - 1)) + elapsed
-            ) / st.session_state.total_scans
-            
-            # Add to history
-            st.session_state.scan_history.insert(0, {
-                "url": url_val,
-                "severity": result["threat_intel"]["severity"],
-                "is_phishing": is_phishing,
-                "time": time.strftime("%H:%M:%S")
-            })
-            
-            st.session_state.last_url_result = result
-            st.session_state.last_scanned_url = url_val
+            if response.status_code == 200:
+                result = response.json()
+            else:
+                used_local_fallback = True
+        except Exception:
+            used_local_fallback = True
+
+    if BACKEND_URL.lower() == "local" or used_local_fallback:
+        if LOCAL_MODE_AVAILABLE:
+            rf_m, text_m, vec = get_local_models()
+            if rf_m is not None and text_m is not None:
+                try:
+                    threat_intel = extract_cybersecurity_report(url_std)
+                    rf_pred = predict(rf_m, url_std)
+                    text_pred = predict_text(text_m, vec, url_std)
+                    explainability = explain_prediction(rf_m, url_std)
+                    
+                    result = {
+                        "url": url_std,
+                        "threat_intel": threat_intel,
+                        "models": {
+                            "random_forest": rf_pred,
+                            "tfidf_text": text_pred
+                        },
+                        "explainability": explainability
+                    }
+                except Exception as e:
+                    st.session_state.last_url_result = {"error": f"Failed running local classification fallback: {e}"}
+                    return
+            else:
+                st.session_state.last_url_result = {"error": "Local AI models could not be loaded. Please ensure models are trained."}
+                return
         else:
-            st.session_state.last_url_result = {"error": f"Error scanning URL: {response.json().get('detail', 'Unknown error')}"}
-    except Exception as e:
-        st.session_state.last_url_result = {"error": f"Could not connect to the scanner service: {e}"}
+            st.session_state.last_url_result = {"error": "Could not connect to backend and local mode is unavailable."}
+            return
+
+    if result:
+        # Override/upgrade severity if AI models detect phishing
+        is_rf_phish = result["models"]["random_forest"]["is_phishing"]
+        is_text_phish = result["models"]["tfidf_text"]["is_phishing"]
+        is_phishing = is_rf_phish or is_text_phish
+        
+        if is_phishing:
+            if is_rf_phish and is_text_phish:
+                result["threat_intel"]["severity"] = "Critical"
+                result["threat_intel"]["reasons"].append("AI Model Ensemble consensus: both classifiers flagged the URL as phishing.")
+            else:
+                result["threat_intel"]["severity"] = "High"
+                if is_rf_phish:
+                    result["threat_intel"]["reasons"].append("Structural AI Model (Random Forest) flagged the URL structure as phishing.")
+                if is_text_phish:
+                    result["threat_intel"]["reasons"].append("Textual AI Model (Logistic Regression) flagged the URL text as phishing.")
+        
+        # Update Session States
+        st.session_state.total_scans += 1
+        if is_phishing:
+            st.session_state.threats_detected += 1
+            
+        elapsed = time.time() - start_time
+        st.session_state.average_response = (
+            (st.session_state.average_response * (st.session_state.total_scans - 1)) + elapsed
+        ) / st.session_state.total_scans
+        
+        # Add to history
+        st.session_state.scan_history.insert(0, {
+            "url": url_val,
+            "severity": result["threat_intel"]["severity"],
+            "is_phishing": is_phishing,
+            "time": time.strftime("%H:%M:%S")
+        })
+        
+        st.session_state.last_url_result = result
+        st.session_state.last_scanned_url = url_val
 
 def trigger_example_url_scan(url_val: str):
     set_url_input(url_val)
@@ -160,28 +220,111 @@ def run_email_scan():
         return
         
     start_time = time.time()
-    try:
-        headers = {"X-API-Key": API_KEY}
-        payload = {"email_text": email_text}
-        response = requests.post(f"{BACKEND_URL}/api/v1/scan-email", json=payload, headers=headers, timeout=12)
-        
-        if response.status_code == 200:
-            email_result = response.json()
-            st.session_state.last_email_result = email_result
-            st.session_state.total_scans += 1
-            if email_result["overall_severity"] in ["Suspicious", "Malicious"]:
-                st.session_state.threats_detected += 1
-                
-            elapsed = time.time() - start_time
-            st.session_state.average_response = (
-                (st.session_state.average_response * (st.session_state.total_scans - 1)) + elapsed
-            ) / st.session_state.total_scans
-            if "email_scan_error" in st.session_state:
-                del st.session_state.email_scan_error
+    email_result = None
+    used_local_fallback = False
+    
+    if BACKEND_URL.lower() != "local":
+        try:
+            headers = {"X-API-Key": API_KEY}
+            payload = {"email_text": email_text}
+            response = requests.post(f"{BACKEND_URL}/api/v1/scan-email", json=payload, headers=headers, timeout=12)
+            
+            if response.status_code == 200:
+                email_result = response.json()
+            else:
+                used_local_fallback = True
+        except Exception:
+            used_local_fallback = True
+
+    if BACKEND_URL.lower() == "local" or used_local_fallback:
+        if LOCAL_MODE_AVAILABLE:
+            rf_m, text_m, vec = get_local_models()
+            if rf_m is not None and text_m is not None:
+                try:
+                    email_summary = parse_email_threats(email_text)
+                    url_scan_results = []
+                    has_malicious_url = False
+                    
+                    for url in email_summary["extracted_urls"]:
+                        url_std = url
+                        if not url_std.startswith(("http://", "https://")):
+                            url_std = "http://" + url_std
+                            
+                        threat_intel = extract_cybersecurity_report(url_std)
+                        rf_pred = predict(rf_m, url_std)
+                        text_pred = predict_text(text_m, vec, url_std)
+                        
+                        is_malicious = (threat_intel["severity"] == "Critical") or (rf_pred["label"] == "Phishing") or (text_pred["label"] == "Phishing")
+                        if is_malicious:
+                            has_malicious_url = True
+                            
+                        url_scan_results.append({
+                            "url": url,
+                            "severity": threat_intel["severity"],
+                            "reasons": threat_intel["reasons"],
+                            "rf_pred": rf_pred["label"],
+                            "text_pred": text_pred["label"],
+                            "is_malicious": is_malicious
+                        })
+                        
+                    overall_severity = email_summary["overall_severity"]
+                    if has_malicious_url:
+                        overall_severity = "Malicious"
+                        
+                    playbook = []
+                    from_domain = email_summary["from_domain"]
+                    return_path_domain = email_summary["return_path_domain"]
+                    block_domain = return_path_domain if return_path_domain else from_domain
+                    
+                    if overall_severity == "Malicious":
+                        playbook.extend([
+                            {"action": "Quarantine Email", "description": "Execute global purge search-and-destroy command across all user mailboxes to delete this message.", "status": "Recommended"},
+                            {"action": "Block Sender Domain", "description": f"Add the sender domain '{block_domain if block_domain else 'unknown'}' to the email gateway blocklist.", "status": "Recommended"},
+                            {"action": "Block Malicious URLs", "description": "Propagate the detected malicious URL(s) to corporate proxy and DNS firewall blocklists.", "status": "Recommended"},
+                            {"action": "Revoke User Sessions", "description": "Force-revoke active login sessions and OAuth tokens for any users who opened or clicked links in this email.", "status": "Immediate Action"},
+                            {"action": "Mandatory Password Reset", "description": "Trigger automated credential resets for affected recipients.", "status": "Immediate Action"}
+                        ])
+                    elif overall_severity == "Suspicious":
+                        playbook.extend([
+                            {"action": "Quarantine Email", "description": "Move the email to user junk/quarantine folders while investigation is pending.", "status": "Recommended"},
+                            {"action": "Alert Recipients", "description": "Deliver a warning banner to the recipient inbox warning against interacting with links.", "status": "Completed"},
+                            {"action": "Analyze Headers further", "description": "Check mail server logs to trace the originating IP of the message and verify sender legitimacy.", "status": "Investigation Required"}
+                        ])
+                    else:
+                        playbook.append({
+                            "action": "No Action Required",
+                            "description": "Email authenticated successfully and contains no suspicious threat signatures.",
+                            "status": "Info"
+                        })
+                        
+                    email_result = {
+                        "email_summary": email_summary,
+                        "url_scan_results": url_scan_results,
+                        "incident_playbook": playbook,
+                        "overall_severity": overall_severity
+                    }
+                except Exception as e:
+                    st.session_state.email_scan_error = f"Failed running local email analysis fallback: {e}"
+                    return
+            else:
+                st.session_state.email_scan_error = "Local AI models could not be loaded. Please ensure models are trained."
+                return
         else:
-            st.session_state.email_scan_error = f"Analysis failed: {response.json().get('detail', 'Unknown error')}"
-    except Exception as e:
-        st.session_state.email_scan_error = f"Could not connect to the security API: {e}"
+            st.session_state.email_scan_error = "Could not connect to backend and local mode is unavailable."
+            return
+
+    if email_result:
+        st.session_state.last_email_result = email_result
+        st.session_state.total_scans += 1
+        if email_result["overall_severity"] in ["Suspicious", "Malicious"]:
+            st.session_state.threats_detected += 1
+            
+        elapsed = time.time() - start_time
+        st.session_state.average_response = (
+            (st.session_state.average_response * (st.session_state.total_scans - 1)) + elapsed
+        ) / st.session_state.total_scans
+        if "email_scan_error" in st.session_state:
+            del st.session_state.email_scan_error
 
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -189,7 +332,10 @@ with st.sidebar:
     st.image("https://img.icons8.com/nolan/128/security-shield.png", width=80)
     st.title("🛡️ ThreatIntel Security")
     st.markdown("### Control Center")
-    st.info(f"Connected to: `{BACKEND_URL}`")
+    if BACKEND_URL.lower() == "local":
+        st.success("🔒 Local Scanner Active")
+    else:
+        st.info(f"Connected to: `{BACKEND_URL}`")
     
     st.markdown("---")
     st.markdown("### Session Statistics")
@@ -219,7 +365,7 @@ with st.sidebar:
 st.title("🔐 Enterprise Phishing URL Intel & Detection Platform")
 st.markdown(
     "A production-grade cybersec AI model ensemble utilizing lexical analysis, "
-    "DNS records, live WHOIS lookups, and Explainable AI (XAI) feature attribution."
+    "DNS records, live WHOIS lookups, and a feature contribution breakdown."
 )
 st.markdown("---")
 
@@ -329,7 +475,7 @@ with tab_url:
                 
             st.markdown("---")
 
-            # ── Model Ensemble & XAI ────────────────────────────────────────────────
+            # ── Model Ensemble & Feature Contribution Breakdown ─────────────────────
             col_ens_l, col_ens_r = st.columns([1, 1])
             
             with col_ens_l:
@@ -353,7 +499,7 @@ with tab_url:
                     st.success(f"🟢 Flagged as: **Legitimate** | Confidence: **{text_res['confidence']}%**")
                     
             with col_ens_r:
-                st.subheader("🔍 Explainable AI (XAI) Feature Attribution")
+                st.subheader("🔍 Feature Contribution Breakdown")
                 st.markdown("Attribution of features to the Random Forest decision (positive values push towards phishing):")
                 
                 contribs = result["explainability"]

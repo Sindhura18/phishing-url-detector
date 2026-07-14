@@ -5,7 +5,7 @@ A cybersecurity tool that detects phishing URLs and analyzes spoofed email messa
 ## Key Features
 
 *   **Ensemble ML Model**: Combines a Random Forest classifier (structural/lexical features) and a TF-IDF Logistic Regression model (textual analysis) for robust URL checks.
-*   **Explainable AI (XAI)**: Visualizes local feature weight attributions to show exactly why a URL was flagged.
+*   **Feature Contribution Breakdown**: Visualizes local feature weight contributions to show exactly why a URL was flagged.
 *   **OSINT Lookups**: Performs real-time DNS (A/MX record) and WHOIS domain lifecycle lookups with safe fallbacks.
 *   **Impersonation & Homoglyph Protection**: Checks for brand typosquatting using Levenshtein distance and flags Unicode script homoglyph lookalikes.
 *   **SOC Email Analyzer**: Parses SPF, DKIM, and DMARC headers, highlights Return-Path envelope mismatches, scans body URLs, and recommends incident playbooks.
