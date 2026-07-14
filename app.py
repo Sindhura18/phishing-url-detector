@@ -329,7 +329,6 @@ def run_email_scan():
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.image("https://img.icons8.com/nolan/128/security-shield.png", width=80)
     st.title("🛡️ ThreatIntel Security")
     st.markdown("### Control Center")
     if BACKEND_URL.lower() == "local":
