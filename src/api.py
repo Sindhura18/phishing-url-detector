@@ -11,17 +11,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src.features import extract_cybersecurity_report
 from src.model import load_model, load_text_model, predict, predict_text, explain_prediction
 
+from contextlib import asynccontextmanager
+
 # Load secure API Key from environment variables
 API_KEY = os.getenv("API_KEY")
-if not API_KEY:
-    raise ValueError("CRITICAL: The 'API_KEY' environment variable is not configured. For security reasons, a secret API key must be provided via the environment.")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Validate API key exists at runtime when starting the server
+    if not os.getenv("API_KEY"):
+        raise ValueError("CRITICAL: The 'API_KEY' environment variable is not configured. For security reasons, a secret API key must be provided via the environment.")
+    yield
 
 # Setup Rate Limiting
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="Phishing URL Detector Security API",
     description="Microservice API for live URL phishing analysis, security lookups, and ML model predictions.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
