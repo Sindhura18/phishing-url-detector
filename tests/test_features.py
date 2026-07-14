@@ -8,7 +8,6 @@ Run with:
 
 These tests verify that each feature function behaves correctly
 on both phishing and legitimate URL examples.
-This is where SDET skills shine — testing the ML feature pipeline.
 """
 
 import sys
