@@ -371,12 +371,15 @@ st.markdown("---")
 
 # ── Backend Health Check ─────────────────────────────────────────────────────
 backend_healthy = False
-try:
-    health_resp = requests.get(f"{BACKEND_URL}/health", timeout=3)
-    if health_resp.status_code == 200 and health_resp.json().get("status") == "healthy":
-        backend_healthy = True
-except Exception:
-    backend_healthy = False
+if BACKEND_URL.lower() == "local":
+    backend_healthy = True
+else:
+    try:
+        health_resp = requests.get(f"{BACKEND_URL}/health", timeout=3)
+        if health_resp.status_code == 200 and health_resp.json().get("status") == "healthy":
+            backend_healthy = True
+    except Exception:
+        backend_healthy = False
 
 if not backend_healthy:
     st.error(
